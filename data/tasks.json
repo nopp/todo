@@ -1,0 +1,26 @@
+[
+  {
+    "id": 3,
+    "title": "Terminar a voron 2.4",
+    "category": "pessoal",
+    "description": "Falta muito pouco para terminar a voron 2.4, terminar",
+    "status": "todo",
+    "created_at": "2025-04-30T14:19:50.818691-03:00"
+  },
+  {
+    "id": 4,
+    "title": "Metrics - Novo helm chart",
+    "category": "trampo",
+    "description": "Criar novo helm chart baseado nos metrics de prod",
+    "status": "doing",
+    "created_at": "2025-04-30T14:20:29.270414-03:00"
+  },
+  {
+    "id": 5,
+    "title": "Organizar office",
+    "category": "pessoal",
+    "description": "Organizar office para cadastrar no sistema de inventario",
+    "status": "todo",
+    "created_at": "2025-04-30T14:21:02.737901-03:00"
+  }
+]
