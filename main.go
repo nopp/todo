@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -32,6 +33,10 @@ var (
 )
 
 func main() {
+	// Configure logging
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("Starting TODO application")
+
 	loadData()
 
 	http.HandleFunc("/", indexHandler)
@@ -47,35 +52,68 @@ func main() {
 	http.HandleFunc("/done", doneHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	http.ListenAndServe(":8080", nil)
+	log.Println("Server starting on :8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
 
 func saveData() {
 	mutex.Lock()
 	defer mutex.Unlock()
-	taskBytes, _ := json.MarshalIndent(tasks, "", "  ")
-	categoryBytes, _ := json.MarshalIndent(categories, "", "  ")
-	_ = os.WriteFile("data/tasks.json", taskBytes, 0644)
-	_ = os.WriteFile("data/categories.json", categoryBytes, 0644)
+	taskBytes, err := json.MarshalIndent(tasks, "", "  ")
+	if err != nil {
+		log.Printf("Error marshalling tasks: %v", err)
+		return
+	}
+	categoryBytes, err := json.MarshalIndent(categories, "", "  ")
+	if err != nil {
+		log.Printf("Error marshalling categories: %v", err)
+		return
+	}
+
+	if err := os.WriteFile("data/tasks.json", taskBytes, 0644); err != nil {
+		log.Printf("Error writing tasks file: %v", err)
+	}
+	if err := os.WriteFile("data/categories.json", categoryBytes, 0644); err != nil {
+		log.Printf("Error writing categories file: %v", err)
+	}
+	log.Println("Data saved successfully")
 }
 
 func loadData() {
+	log.Println("Loading data")
 	if taskBytes, err := os.ReadFile("data/tasks.json"); err == nil {
-		_ = json.Unmarshal(taskBytes, &tasks)
-		for _, t := range tasks {
-			if t.ID >= taskIDSeq {
-				taskIDSeq = t.ID + 1
+		if err := json.Unmarshal(taskBytes, &tasks); err != nil {
+			log.Printf("Error unmarshalling tasks: %v", err)
+		} else {
+			for _, t := range tasks {
+				if t.ID >= taskIDSeq {
+					taskIDSeq = t.ID + 1
+				}
 			}
+			log.Printf("Loaded %d tasks", len(tasks))
 		}
 	} else {
+		log.Printf("Tasks file not found: %v", err)
 		// Create data directory if it doesn't exist
-		os.MkdirAll("data", 0755)
+		if err := os.MkdirAll("data", 0755); err != nil {
+			log.Printf("Error creating data directory: %v", err)
+		}
 	}
+
 	if categoryBytes, err := os.ReadFile("data/categories.json"); err == nil {
-		_ = json.Unmarshal(categoryBytes, &categories)
+		if err := json.Unmarshal(categoryBytes, &categories); err != nil {
+			log.Printf("Error unmarshalling categories: %v", err)
+		} else {
+			log.Printf("Loaded %d categories", len(categories))
+		}
 	} else {
+		log.Printf("Categories file not found: %v", err)
 		// Create data directory if it doesn't exist
-		os.MkdirAll("data", 0755)
+		if err := os.MkdirAll("data", 0755); err != nil {
+			log.Printf("Error creating data directory: %v", err)
+		}
 	}
 }
 
@@ -105,8 +143,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/index.html"))
-	tmpl.Execute(w, struct {
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/index.html"))
+	tmpl.ExecuteTemplate(w, "index", struct {
 		Tasks      []Task
 		Categories []Category
 		Query      string
@@ -191,8 +229,8 @@ func editTaskHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func categoryPageHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("templates/categories.html"))
-	tmpl.Execute(w, categories)
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/categories.html"))
+	tmpl.ExecuteTemplate(w, "categories", categories)
 }
 
 func addCategoryHandler(w http.ResponseWriter, r *http.Request) {
@@ -307,8 +345,8 @@ func backlogHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/backlog.html"))
-	tmpl.Execute(w, struct {
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/backlog.html"))
+	tmpl.ExecuteTemplate(w, "backlog", struct {
 		Tasks      []Task
 		Categories []Category
 		Query      string
@@ -341,8 +379,8 @@ func doneHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmpl := template.Must(template.ParseFiles("templates/done.html"))
-	tmpl.Execute(w, struct {
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/done.html"))
+	tmpl.ExecuteTemplate(w, "done", struct {
 		Tasks      []Task
 		Categories []Category
 		Query      string
