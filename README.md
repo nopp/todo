@@ -1,7 +1,5 @@
 # TODO App
 
-![Screenshot of the TODO System](img/screenshot.png)
-
 ## Overview
 
 A feature-rich Todo application built with Go and HTML/CSS, designed to help manage tasks efficiently. The application provides an intuitive interface for creating, organizing, and tracking tasks with support for categories, statuses, and different views.
