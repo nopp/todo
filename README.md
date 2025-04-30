@@ -111,10 +111,6 @@ The application includes comprehensive logging for:
 - Data operations (load/save)
 - Error handling
 
-## License
-
-This project is maintained by nopp.
-
 ## Screenshots
 
 ![Main View](img/screenshot.png)
