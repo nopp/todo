@@ -44,6 +44,8 @@ todo_app_material/
 └── main.go                # Application entry point and server logic
 ```
 
+Yes, the database is json file, because this system need to be very simple.
+
 ## Running the Application
 
 ### Local Development
