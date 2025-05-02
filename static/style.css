@@ -382,6 +382,15 @@ body {
 .done-badge {
   background-color: #4CAF50;
 }
+.category-badge {
+  background-color: #FF9800;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  display: inline-block;
+  color: #fff;
+  margin-left: 5px;
+}
 
 /* Categories specific styles */
 .category-form {

@@ -42,9 +42,10 @@
   <div class="task-card">
     <div class="task-content">
       <h2 class="task-title">{{.Title}}</h2>
-      
-      <div class="task-info"><span class="task-info-label">Category:</span> {{.Category}}</div>
-      <div class="task-info"><span class="task-info-label">Description:</span> {{.Description}}</div>
+      <div class="task-info">
+        <span class="category-badge">{{.Category}}</span>
+      </div>
+      <div class="task-info">{{.Description}}</div>
     </div>
     
     <div class="task-meta">
