@@ -19,40 +19,11 @@
   <a href="/" class="main-btn">
     <i class="material-icons">arrow_back</i> BACK TO MAIN LIST
   </a>
+
+  <a href="/add-task-page" class="done-btn" style="background-color: #FF4081;">
+    <i class="material-icons">add</i> NEW TASK
+  </a>
 </div>
-
-<form action="/add-task" method="POST" class="task-form">
-  <div class="input-group input-lg">
-    <label class="input-label">Task Name</label>
-    <input class="input-field" type="text" name="title" required>
-  </div>
-  
-  <div class="input-group input-lg">
-    <label class="input-label">Description</label>
-    <input class="input-field" type="text" name="description" required>
-  </div>
-
-  <div class="input-group input-sm">
-    <label class="input-label">Status</label>
-    <select class="input-field" name="status">
-      <option value="todo">Todo</option>
-      <option value="doing">Doing</option>
-      <option value="done" selected>Done</option>
-      <option value="backlog">Backlog</option>
-    </select>
-  </div>
-  
-  <div class="input-group input-sm">
-    <label class="input-label">Category</label>
-    <select class="input-field" name="category">
-      {{range .Categories}}<option>{{.Name}}</option>{{end}}
-    </select>
-  </div>
-  
-  <button class="add-task-btn" type="submit">
-    <i class="material-icons">add</i>
-  </button>
-</form>
 
 {{if eq (len .Tasks) 0}}
 <div class="empty-message">

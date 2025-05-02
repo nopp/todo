@@ -50,6 +50,7 @@ func main() {
 	http.HandleFunc("/edit-category", editCategoryHandler)
 	http.HandleFunc("/backlog", backlogHandler)
 	http.HandleFunc("/done", doneHandler)
+	http.HandleFunc("/add-task-page", addTaskPageHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	log.Println("Server starting on :8080")
@@ -151,6 +152,13 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}{filteredTasks, categories, query})
 }
 
+func addTaskPageHandler(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/add-task.html"))
+	tmpl.ExecuteTemplate(w, "add-task", struct {
+		Categories []Category
+	}{categories})
+}
+
 func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		title := r.FormValue("title")
@@ -177,13 +185,8 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 		saveData()
 	}
 
-	// Get the referer to redirect back to the page where the request came from
-	referer := r.Header.Get("Referer")
-	if referer == "" {
-		referer = "/"
-	}
-
-	http.Redirect(w, r, referer, http.StatusSeeOther)
+	// Redirect to homepage
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func deleteTaskHandler(w http.ResponseWriter, r *http.Request) {

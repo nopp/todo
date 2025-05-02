@@ -29,6 +29,16 @@
   <h1 class="page-title">Categories</h1>
 </div>
 
+<div class="button-container">
+  <a href="/" class="main-btn">
+    <i class="material-icons">arrow_back</i> BACK TO MAIN LIST
+  </a>
+
+  <a href="/add-task-page" class="done-btn" style="background-color: #FF4081;">
+    <i class="material-icons">add</i> NEW TASK
+  </a>
+</div>
+
 <div class="category-form-container">
   <form action="/add-category" method="POST" class="category-form">
     <div class="input-group">
@@ -58,8 +68,6 @@
   </li>
   {{end}}
 </ul>
-
-<a href="/" class="back-btn">BACK TO TODOS</a>
 {{end}}
 
 {{define "categories"}}

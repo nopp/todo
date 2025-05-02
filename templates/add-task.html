@@ -1,0 +1,66 @@
+{{define "title"}}Add New Task{{end}}
+
+{{define "content"}}
+<div class="header-container">
+  <h1 class="page-title">Add New Task</h1>
+</div>
+
+<div class="button-container">
+  <a href="/" class="main-btn">
+    <i class="material-icons">arrow_back</i> BACK TO MAIN LIST
+  </a>
+</div>
+
+<div class="add-task-container">
+  <form action="/add-task" method="POST">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Task Name</label>
+        <input type="text" name="title" class="form-control" required>
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select name="category" class="form-control" required>
+          <option value="" disabled selected>Select a category</option>
+          {{range .Categories}}
+          <option value="{{.Name}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea name="description" class="form-control description-textarea" rows="5"></textarea>
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-control">
+          <option value="todo">Todo</option>
+          <option value="doing">Doing</option>
+          <option value="backlog">Backlog</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="form-actions">
+      <button type="submit" class="done-btn" style="background-color: #FF4081;">
+        <i class="material-icons">add</i> ADD TASK
+      </button>
+      <a href="/" class="main-btn">CANCEL</a>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "add-task"}}
+  {{template "layout" .}}
+{{end}} 
