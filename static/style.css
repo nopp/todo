@@ -10,11 +10,36 @@ body {
   align-items: center;
   margin-bottom: 30px;
 }
+.logo-container {
+  display: flex;
+  align-items: center;
+  height: 40px;
+}
+.logo-icon {
+  color: #FF4081;
+  font-size: 40px;
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  height: 40px;
+}
+.logo-text {
+  font-size: 36px;
+  font-weight: 400;
+  color: #333;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  margin: 0;
+}
 .page-title {
   margin: 0;
   font-size: 36px;
   font-weight: 400;
   color: #333;
+}
+.page-title span {
+  display: block;
 }
 .search-form {
   margin: 0;
@@ -56,6 +81,12 @@ body {
 }
 .search-button i {
   font-size: 20px;
+}
+.search-container {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 20px;
 }
 .button-container {
   display: flex;
@@ -344,6 +375,9 @@ body {
   margin-left: 10px;
   font-size: 14px;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 .done-badge {
   background-color: #4CAF50;

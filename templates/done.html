@@ -2,8 +2,15 @@
 
 {{define "content"}}
 <div class="header-container">
-  <h1 class="page-title">Completed Tasks <span class="done-badge">{{len .Tasks}} items</span></h1>
-  
+  <div class="logo-container">
+    <i class="material-icons logo-icon">assignment_turned_in</i>
+    <span class="logo-text">
+      Completed Tasks <span class="done-badge">{{len .Tasks}} items</span>
+    </span>
+  </div>
+</div>
+
+<div class="search-container">
   <div class="search-form">
     <label class="search-label">Search</label>
     <form action="/done" method="GET">
