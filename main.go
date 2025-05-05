@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -26,13 +25,7 @@ type Category struct {
 	Name string `json:"name"`
 }
 
-var (
-	tasks      = []Task{}
-	categories = []Category{}
-	taskIDSeq  = 1
-	mutex      sync.Mutex
-	db         *sql.DB
-)
+var db *sql.DB
 
 func main() {
 	// Configure logging
@@ -99,18 +92,15 @@ func loadData() {
 	}
 	defer rows.Close()
 
+	var tasks []Task
 	for rows.Next() {
 		var t Task
 		var createdAt string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
-			log.Printf("Error scanning task: %v", err)
 			continue
 		}
 		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		tasks = append(tasks, t)
-		if t.ID >= taskIDSeq {
-			taskIDSeq = t.ID + 1
-		}
 	}
 	log.Printf("Loaded %d tasks", len(tasks))
 
@@ -121,10 +111,10 @@ func loadData() {
 	}
 	defer rows.Close()
 
+	var categories []Category
 	for rows.Next() {
 		var c Category
 		if err := rows.Scan(&c.Name); err != nil {
-			log.Printf("Error scanning category: %v", err)
 			continue
 		}
 		categories = append(categories, c)
@@ -132,10 +122,31 @@ func loadData() {
 	log.Printf("Loaded %d categories", len(categories))
 }
 
-func getAllTasks() ([]Task, error) {
-	rows, err := db.Query("SELECT id, title, category, description, status, created_at FROM tasks")
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+
+	// Query tasks from DB
+	var rows *sql.Rows
+	var err error
+	if query != "" {
+		likeQuery := "%" + strings.ToLower(query) + "%"
+		rows, err = db.Query(
+			`SELECT id, title, category, description, status, created_at
+			 FROM tasks
+			 WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(category) LIKE ?)
+			 AND status NOT IN ('backlog', 'done')`,
+			likeQuery, likeQuery, likeQuery,
+		)
+	} else {
+		rows, err = db.Query(
+			`SELECT id, title, category, description, status, created_at
+			 FROM tasks
+			 WHERE status NOT IN ('backlog', 'done')`,
+		)
+	}
 	if err != nil {
-		return nil, err
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 	defer rows.Close()
 
@@ -144,38 +155,26 @@ func getAllTasks() ([]Task, error) {
 		var t Task
 		var createdAt string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
-			return nil, err
+			continue
 		}
 		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		tasks = append(tasks, t)
 	}
-	return tasks, nil
-}
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
-
-	var filteredTasks []Task
-	if query != "" {
-		for _, task := range tasks {
-			// Don't show backlog or done tasks on the main page
-			if task.Status == "backlog" || task.Status == "done" {
-				continue
-			}
-
-			if strings.Contains(strings.ToLower(task.Title), strings.ToLower(query)) ||
-				strings.Contains(strings.ToLower(task.Description), strings.ToLower(query)) ||
-				strings.Contains(strings.ToLower(task.Category), strings.ToLower(query)) {
-				filteredTasks = append(filteredTasks, task)
-			}
+	// Query categories from DB
+	catRows, err := db.Query("SELECT name FROM categories")
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer catRows.Close()
+	var categories []Category
+	for catRows.Next() {
+		var c Category
+		if err := catRows.Scan(&c.Name); err != nil {
+			continue
 		}
-	} else {
-		// Filter out backlog and done tasks
-		for _, task := range tasks {
-			if task.Status != "backlog" && task.Status != "done" {
-				filteredTasks = append(filteredTasks, task)
-			}
-		}
+		categories = append(categories, c)
 	}
 
 	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/index.html"))
@@ -183,11 +182,16 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		Tasks      []Task
 		Categories []Category
 		Query      string
-	}{filteredTasks, categories, query})
+	}{tasks, categories, query})
 }
 
 func addTaskPageHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/add-task.html"))
+	categories, err := getAllCategories()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
 	tmpl.ExecuteTemplate(w, "add-task", struct {
 		Categories []Category
 	}{categories})
@@ -199,40 +203,29 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 		category := r.FormValue("category")
 		description := r.FormValue("description")
 		status := r.FormValue("status")
-
-		// Default to todo if no status is provided
 		if status == "" {
 			status = "todo"
 		}
-
-		mutex.Lock()
-		tasks = append(tasks, Task{
-			ID:          taskIDSeq,
-			Title:       title,
-			Category:    category,
-			Description: description,
-			Status:      status,
-			CreatedAt:   time.Now(),
-		})
-		taskIDSeq++
-		mutex.Unlock()
+		_, err := db.Exec(
+			"INSERT INTO tasks (title, category, description, status, created_at) VALUES (?, ?, ?, ?, ?)",
+			title, category, description, status, time.Now().Format(time.RFC3339),
+		)
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
 	}
-
-	// Redirect to homepage
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func deleteTaskHandler(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, _ := strconv.Atoi(idStr)
-	mutex.Lock()
-	for i, task := range tasks {
-		if id == task.ID {
-			tasks = append(tasks[:i], tasks[i+1:]...)
-			break
-		}
+	_, err := db.Exec("DELETE FROM tasks WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
-	mutex.Unlock()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -245,34 +238,36 @@ func editTaskHandler(w http.ResponseWriter, r *http.Request) {
 		description := r.FormValue("description")
 		status := r.FormValue("status")
 
-		mutex.Lock()
-		for i := range tasks {
-			if id == tasks[i].ID {
-				tasks[i].Title = title
-				tasks[i].Category = category
-				tasks[i].Description = description
-				if status != "" {
-					tasks[i].Status = status
-				}
-				break
-			}
+		_, err := db.Exec(
+			"UPDATE tasks SET title = ?, category = ?, description = ?, status = ? WHERE id = ?",
+			title, category, description, status, id,
+		)
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
 		}
-		mutex.Unlock()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func categoryPageHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/categories.html"))
+	categories, err := getAllCategories()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
 	tmpl.ExecuteTemplate(w, "categories", categories)
 }
 
 func addCategoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		name := r.FormValue("name")
-		mutex.Lock()
-		categories = append(categories, Category{Name: name})
-		mutex.Unlock()
+		_, err := db.Exec("INSERT INTO categories (name) VALUES (?)", name)
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Get the referer to redirect back to the page where the request came from
@@ -286,14 +281,11 @@ func addCategoryHandler(w http.ResponseWriter, r *http.Request) {
 
 func deleteCategoryHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
-	mutex.Lock()
-	for i, c := range categories {
-		if c.Name == name {
-			categories = append(categories[:i], categories[i+1:]...)
-			break
-		}
+	_, err := db.Exec("DELETE FROM categories WHERE name = ?", name)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
-	mutex.Unlock()
 	http.Redirect(w, r, "/categories", http.StatusSeeOther)
 }
 
@@ -303,14 +295,11 @@ func updateTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.Atoi(idStr)
 		status := r.FormValue("status")
 
-		mutex.Lock()
-		for i := range tasks {
-			if id == tasks[i].ID {
-				tasks[i].Status = status
-				break
-			}
+		_, err := db.Exec("UPDATE tasks SET status = ? WHERE id = ?", status, id)
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
 		}
-		mutex.Unlock()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -321,22 +310,11 @@ func editCategoryHandler(w http.ResponseWriter, r *http.Request) {
 		newName := r.FormValue("new_name")
 
 		if oldName != "" && newName != "" {
-			mutex.Lock()
-			// Update the category name
-			for i := range categories {
-				if categories[i].Name == oldName {
-					categories[i].Name = newName
-
-					// Also update all tasks that use this category
-					for j := range tasks {
-						if tasks[j].Category == oldName {
-							tasks[j].Category = newName
-						}
-					}
-					break
-				}
+			_, err := db.Exec("UPDATE categories SET name = ? WHERE name = ?", newName, oldName)
+			if err != nil {
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
 			}
-			mutex.Unlock()
 		}
 	}
 
@@ -351,15 +329,23 @@ func editCategoryHandler(w http.ResponseWriter, r *http.Request) {
 
 func backlogHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
+	tasks, err := getAllTasks()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	categories, err := getAllCategories()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
 
 	var backlogTasks []Task
 	if query != "" {
 		for _, task := range tasks {
-			// Only include backlog tasks
 			if task.Status != "backlog" {
 				continue
 			}
-
 			if strings.Contains(strings.ToLower(task.Title), strings.ToLower(query)) ||
 				strings.Contains(strings.ToLower(task.Description), strings.ToLower(query)) ||
 				strings.Contains(strings.ToLower(task.Category), strings.ToLower(query)) {
@@ -367,7 +353,6 @@ func backlogHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		// Get only backlog tasks
 		for _, task := range tasks {
 			if task.Status == "backlog" {
 				backlogTasks = append(backlogTasks, task)
@@ -385,15 +370,23 @@ func backlogHandler(w http.ResponseWriter, r *http.Request) {
 
 func doneHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
+	tasks, err := getAllTasks()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	categories, err := getAllCategories()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
 
 	var doneTasks []Task
 	if query != "" {
 		for _, task := range tasks {
-			// Only include done tasks
 			if task.Status != "done" {
 				continue
 			}
-
 			if strings.Contains(strings.ToLower(task.Title), strings.ToLower(query)) ||
 				strings.Contains(strings.ToLower(task.Description), strings.ToLower(query)) ||
 				strings.Contains(strings.ToLower(task.Category), strings.ToLower(query)) {
@@ -401,7 +394,6 @@ func doneHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		// Get only done tasks
 		for _, task := range tasks {
 			if task.Status == "done" {
 				doneTasks = append(doneTasks, task)
@@ -417,10 +409,38 @@ func doneHandler(w http.ResponseWriter, r *http.Request) {
 	}{doneTasks, categories, query})
 }
 
-func insertTask(t Task) error {
-	_, err := db.Exec(
-		"INSERT INTO tasks (title, category, description, status, created_at) VALUES (?, ?, ?, ?, ?)",
-		t.Title, t.Category, t.Description, t.Status, t.CreatedAt.Format(time.RFC3339),
-	)
-	return err
+func getAllCategories() ([]Category, error) {
+	rows, err := db.Query("SELECT name FROM categories")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []Category
+	for rows.Next() {
+		var c Category
+		if err := rows.Scan(&c.Name); err != nil {
+			continue
+		}
+		categories = append(categories, c)
+	}
+	return categories, nil
+}
+
+func getAllTasks() ([]Task, error) {
+	rows, err := db.Query("SELECT id, title, category, description, status, created_at FROM tasks")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		var createdAt string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
+			continue
+		}
+		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
 }
