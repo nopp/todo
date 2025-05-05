@@ -1,15 +1,16 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
 	"html/template"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Task struct {
@@ -30,12 +31,22 @@ var (
 	categories = []Category{}
 	taskIDSeq  = 1
 	mutex      sync.Mutex
+	db         *sql.DB
 )
 
 func main() {
 	// Configure logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Starting TODO application")
+
+	var err error
+	db, err = sql.Open("sqlite3", "./data/todo.db")
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	createTables()
 
 	loadData()
 
@@ -59,63 +70,86 @@ func main() {
 	}
 }
 
-func saveData() {
-	mutex.Lock()
-	defer mutex.Unlock()
-	taskBytes, err := json.MarshalIndent(tasks, "", "  ")
+func createTables() {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS categories (
+			name TEXT PRIMARY KEY
+		);
+		CREATE TABLE IF NOT EXISTS tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			title TEXT,
+			category TEXT,
+			description TEXT,
+			status TEXT,
+			created_at DATETIME,
+			FOREIGN KEY(category) REFERENCES categories(name)
+		);
+	`)
 	if err != nil {
-		log.Printf("Error marshalling tasks: %v", err)
-		return
+		log.Fatalf("Failed to create tables: %v", err)
 	}
-	categoryBytes, err := json.MarshalIndent(categories, "", "  ")
-	if err != nil {
-		log.Printf("Error marshalling categories: %v", err)
-		return
-	}
-
-	if err := os.WriteFile("data/tasks.json", taskBytes, 0644); err != nil {
-		log.Printf("Error writing tasks file: %v", err)
-	}
-	if err := os.WriteFile("data/categories.json", categoryBytes, 0644); err != nil {
-		log.Printf("Error writing categories file: %v", err)
-	}
-	log.Println("Data saved successfully")
 }
 
 func loadData() {
 	log.Println("Loading data")
-	if taskBytes, err := os.ReadFile("data/tasks.json"); err == nil {
-		if err := json.Unmarshal(taskBytes, &tasks); err != nil {
-			log.Printf("Error unmarshalling tasks: %v", err)
-		} else {
-			for _, t := range tasks {
-				if t.ID >= taskIDSeq {
-					taskIDSeq = t.ID + 1
-				}
-			}
-			log.Printf("Loaded %d tasks", len(tasks))
-		}
-	} else {
-		log.Printf("Tasks file not found: %v", err)
-		// Create data directory if it doesn't exist
-		if err := os.MkdirAll("data", 0755); err != nil {
-			log.Printf("Error creating data directory: %v", err)
-		}
+	rows, err := db.Query("SELECT id, title, category, description, status, created_at FROM tasks")
+	if err != nil {
+		log.Printf("Error querying tasks: %v", err)
+		return
 	}
+	defer rows.Close()
 
-	if categoryBytes, err := os.ReadFile("data/categories.json"); err == nil {
-		if err := json.Unmarshal(categoryBytes, &categories); err != nil {
-			log.Printf("Error unmarshalling categories: %v", err)
-		} else {
-			log.Printf("Loaded %d categories", len(categories))
+	for rows.Next() {
+		var t Task
+		var createdAt string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
+			log.Printf("Error scanning task: %v", err)
+			continue
 		}
-	} else {
-		log.Printf("Categories file not found: %v", err)
-		// Create data directory if it doesn't exist
-		if err := os.MkdirAll("data", 0755); err != nil {
-			log.Printf("Error creating data directory: %v", err)
+		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		tasks = append(tasks, t)
+		if t.ID >= taskIDSeq {
+			taskIDSeq = t.ID + 1
 		}
 	}
+	log.Printf("Loaded %d tasks", len(tasks))
+
+	rows, err = db.Query("SELECT name FROM categories")
+	if err != nil {
+		log.Printf("Error querying categories: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var c Category
+		if err := rows.Scan(&c.Name); err != nil {
+			log.Printf("Error scanning category: %v", err)
+			continue
+		}
+		categories = append(categories, c)
+	}
+	log.Printf("Loaded %d categories", len(categories))
+}
+
+func getAllTasks() ([]Task, error) {
+	rows, err := db.Query("SELECT id, title, category, description, status, created_at FROM tasks")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		var createdAt string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
+			return nil, err
+		}
+		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +216,6 @@ func addTaskHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		taskIDSeq++
 		mutex.Unlock()
-		saveData()
 	}
 
 	// Redirect to homepage
@@ -200,7 +233,6 @@ func deleteTaskHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	mutex.Unlock()
-	saveData()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -226,7 +258,6 @@ func editTaskHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		mutex.Unlock()
-		saveData()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -242,7 +273,6 @@ func addCategoryHandler(w http.ResponseWriter, r *http.Request) {
 		mutex.Lock()
 		categories = append(categories, Category{Name: name})
 		mutex.Unlock()
-		saveData()
 	}
 
 	// Get the referer to redirect back to the page where the request came from
@@ -264,7 +294,6 @@ func deleteCategoryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	mutex.Unlock()
-	saveData()
 	http.Redirect(w, r, "/categories", http.StatusSeeOther)
 }
 
@@ -282,7 +311,6 @@ func updateTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		mutex.Unlock()
-		saveData()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -309,7 +337,6 @@ func editCategoryHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			mutex.Unlock()
-			saveData()
 		}
 	}
 
@@ -388,4 +415,12 @@ func doneHandler(w http.ResponseWriter, r *http.Request) {
 		Categories []Category
 		Query      string
 	}{doneTasks, categories, query})
+}
+
+func insertTask(t Task) error {
+	_, err := db.Exec(
+		"INSERT INTO tasks (title, category, description, status, created_at) VALUES (?, ?, ?, ?, ?)",
+		t.Title, t.Category, t.Description, t.Status, t.CreatedAt.Format(time.RFC3339),
+	)
+	return err
 }

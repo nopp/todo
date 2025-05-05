@@ -19,15 +19,14 @@ A feature-rich Todo application built with Go and HTML/CSS, designed to help man
 
 - **Backend**: Go (Golang)
 - **Frontend**: HTML, CSS, Material Design Lite
-- **Data Storage**: JSON files (tasks.json, categories.json)
+- **Data Storage**: SQLite database (`data/todo.db`)
 
 ## Project Structure
 
 ```
 todo_app_material/
 ├── data/                  # Data storage directory
-│   ├── tasks.json         # Tasks data
-│   └── categories.json    # Categories data
+│   └── todo.db            # SQLite database file
 ├── templates/             # HTML templates
 │   ├── layout.html        # Main layout template
 │   ├── index.html         # Home page template
@@ -40,45 +39,49 @@ todo_app_material/
 │   ├── deployment.yaml    # Kubernetes deployment
 │   ├── service.yaml       # Kubernetes service
 │   ├── pvc.yaml           # Persistent Volume Claim
-│   └── configmap.yaml     # ConfigMap for environment variables
 └── main.go                # Application entry point and server logic
 ```
 
-Yes, the database is json file, because this system need to be very simple.
+Yes, the database is SQLite, because this system need to be very simple.
 
 ## Running the Application
 
-### Local Development
+1. **Install Go and SQLite3 driver**
 
-1. Make sure you have Go installed (1.16+ recommended)
-2. Clone the repository
-3. Run the application:
+   Make sure you have Go installed. The SQLite3 driver is included as a dependency.
+
+2. **Install dependencies**
+
+   ```sh
+   go mod tidy
    ```
+
+3. **Build and run the application**
+
+   ```sh
    go run main.go
    ```
-4. Access the application at `http://localhost:8080`
 
-### Using Docker
+   The server will start on [http://localhost:8080](http://localhost:8080).
 
-```bash
-# Build the Docker image
-docker build -t todo-app:latest .
+4. **Database**
 
-# Run the container
-docker run -p 8080:8080 -v $(pwd)/data:/app/data todo-app:latest
-```
+   - The application will automatically create the SQLite database at `data/todo.db` and initialize the required tables on first run.
+   - All tasks and categories are now stored in this SQLite database.
 
-### Kubernetes Deployment
+## Kubernetes Deployment
 
-The application can be deployed to Kubernetes using the provided manifests:
+Kubernetes manifests are provided in the `k8s/` directory for deploying the application in a containerized environment. Persistent storage is configured for the SQLite database:
 
-```bash
-# Apply Kubernetes resources
-kubectl apply -f k8s/pvc.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-```
+- The `PersistentVolumeClaim` in `pvc.yaml` ensures that the `data/todo.db` file is stored on persistent storage.
+- The `deployment.yaml` mounts this PVC at `/app/data` inside the container, so your database is always persisted, even if the pod is restarted or rescheduled.
+
+
+## License
+
+MIT
+
+---
 
 ## Application Features
 
@@ -116,3 +119,5 @@ The application includes comprehensive logging for:
 ## Screenshots
 
 ![Main View](img/screenshot.png)
+
+**Enjoy your new SQLite-powered TODO app!**
