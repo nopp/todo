@@ -125,56 +125,35 @@ func loadData() {
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 
-	// Query tasks from DB
-	var rows *sql.Rows
-	var err error
+	tasks, err := getAllTasks()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	categories, err := getAllCategories()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	var filteredTasks []Task
 	if query != "" {
-		likeQuery := "%" + strings.ToLower(query) + "%"
-		rows, err = db.Query(
-			`SELECT id, title, category, description, status, created_at
-			 FROM tasks
-			 WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(category) LIKE ?)
-			 AND status NOT IN ('backlog', 'done')`,
-			likeQuery, likeQuery, likeQuery,
-		)
+		for _, task := range tasks {
+			if task.Status == "backlog" || task.Status == "done" {
+				continue
+			}
+			if strings.Contains(strings.ToLower(task.Title), strings.ToLower(query)) ||
+				strings.Contains(strings.ToLower(task.Description), strings.ToLower(query)) ||
+				strings.Contains(strings.ToLower(task.Category), strings.ToLower(query)) {
+				filteredTasks = append(filteredTasks, task)
+			}
+		}
 	} else {
-		rows, err = db.Query(
-			`SELECT id, title, category, description, status, created_at
-			 FROM tasks
-			 WHERE status NOT IN ('backlog', 'done')`,
-		)
-	}
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var tasks []Task
-	for rows.Next() {
-		var t Task
-		var createdAt string
-		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Description, &t.Status, &createdAt); err != nil {
-			continue
+		for _, task := range tasks {
+			if task.Status != "backlog" && task.Status != "done" {
+				filteredTasks = append(filteredTasks, task)
+			}
 		}
-		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		tasks = append(tasks, t)
-	}
-
-	// Query categories from DB
-	catRows, err := db.Query("SELECT name FROM categories")
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	defer catRows.Close()
-	var categories []Category
-	for catRows.Next() {
-		var c Category
-		if err := catRows.Scan(&c.Name); err != nil {
-			continue
-		}
-		categories = append(categories, c)
 	}
 
 	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/index.html"))
@@ -182,16 +161,16 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		Tasks      []Task
 		Categories []Category
 		Query      string
-	}{tasks, categories, query})
+	}{filteredTasks, categories, query})
 }
 
 func addTaskPageHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/add-task.html"))
 	categories, err := getAllCategories()
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/add-task.html"))
 	tmpl.ExecuteTemplate(w, "add-task", struct {
 		Categories []Category
 	}{categories})
@@ -251,31 +230,28 @@ func editTaskHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func categoryPageHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/categories.html"))
 	categories, err := getAllCategories()
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
+	tmpl := template.Must(template.ParseFiles("templates/layout.html", "templates/categories.html"))
 	tmpl.ExecuteTemplate(w, "categories", categories)
 }
 
 func addCategoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		name := r.FormValue("name")
-		_, err := db.Exec("INSERT INTO categories (name) VALUES (?)", name)
+		_, err := db.Exec("INSERT OR IGNORE INTO categories (name) VALUES (?)", name)
 		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
 		}
 	}
-
-	// Get the referer to redirect back to the page where the request came from
 	referer := r.Header.Get("Referer")
 	if referer == "" {
 		referer = "/categories"
 	}
-
 	http.Redirect(w, r, referer, http.StatusSeeOther)
 }
 
@@ -294,7 +270,6 @@ func updateTaskStatusHandler(w http.ResponseWriter, r *http.Request) {
 		idStr := r.FormValue("id")
 		id, _ := strconv.Atoi(idStr)
 		status := r.FormValue("status")
-
 		_, err := db.Exec("UPDATE tasks SET status = ? WHERE id = ?", status, id)
 		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
@@ -308,22 +283,23 @@ func editCategoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		oldName := r.FormValue("old_name")
 		newName := r.FormValue("new_name")
-
 		if oldName != "" && newName != "" {
 			_, err := db.Exec("UPDATE categories SET name = ? WHERE name = ?", newName, oldName)
 			if err != nil {
 				http.Error(w, "Database error", http.StatusInternalServerError)
 				return
 			}
+			_, err = db.Exec("UPDATE tasks SET category = ? WHERE category = ?", newName, oldName)
+			if err != nil {
+				http.Error(w, "Database error", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
-
-	// Get the referer to redirect back to the page where the request came from
 	referer := r.Header.Get("Referer")
 	if referer == "" {
 		referer = "/categories"
 	}
-
 	http.Redirect(w, r, referer, http.StatusSeeOther)
 }
 
